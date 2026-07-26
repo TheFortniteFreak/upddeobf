@@ -47,20 +47,8 @@ def Pretty(code):
 
     lines = []
     current = []
-
     indent = 0
     paren = 0
-    function_header = False
-
-    statement_words = {
-        "if",
-        "for",
-        "while",
-        "function",
-        "local",
-        "return",
-        "repeat"
-    }
 
     def flush():
         nonlocal current
@@ -70,22 +58,27 @@ def Pretty(code):
                 lines.append("\t" * indent + text)
             current = []
 
-    def add(x):
-        current.append(x)
-
     def space():
         if current and not current[-1].endswith(" "):
             current.append(" ")
 
+    def ident(x):
+        return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", x or ""))
+
+    i = 0
     previous = None
 
-    for token in tokens:
+    while i < len(tokens):
+        token = tokens[i]
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+        nxt2 = tokens[i + 2] if i + 2 < len(tokens) else None
 
         if token in ("end", "until"):
             flush()
             indent = max(indent - 1, 0)
             lines.append("\t" * indent + token)
             previous = token
+            i += 1
             continue
 
         if token in ("else", "elseif"):
@@ -94,72 +87,55 @@ def Pretty(code):
             lines.append("\t" * indent + token)
             indent += 1
             previous = token
-            continue
-
-        if token == "function":
-            if current:
-                space()
-
-            add("function")
-            space()
-            function_header = True
-            paren = 0
-
-            previous = token
-            continue
-
-        if function_header:
-            if token == "(":
-                add("(")
-                paren += 1
-
-            elif token == ")":
-                if current and current[-1] == " ":
-                    current.pop()
-
-                add(")")
-                paren -= 1
-
-                if paren == 0:
-                    flush()
-                    indent += 1
-                    function_header = False
-
-            else:
-                if current and not current[-1].endswith((" ", "(")):
-                    space()
-                add(token)
-
-            previous = token
+            i += 1
             continue
 
         if token in ("then", "do"):
             space()
-            add(token)
+            current.append(token)
             flush()
             indent += 1
             previous = token
+            i += 1
             continue
 
         if (
-            token in statement_words
-            and current
-            and previous not in ("then", "do", "=")
+            current
+            and ident(token)
+            and (
+                nxt == "="
+                or nxt == "("
+            )
+            and previous not in (
+                "local",
+                "function",
+                "if",
+                "for",
+                "while"
+            )
         ):
             flush()
 
-        if token == "(":
-            add("(")
+        if token == "function":
+            if current:
+                space()
+            current.append("function")
+            space()
+
+        elif token == "(":
+            current.append("(")
+            paren += 1
 
         elif token == ")":
             if current and current[-1] == " ":
                 current.pop()
-            add(")")
+            current.append(")")
+            paren -= 1
 
         elif token == ",":
             if current and current[-1] == " ":
                 current.pop()
-            add(", ")
+            current.append(", ")
 
         elif token in (
             "=",
@@ -176,26 +152,20 @@ def Pretty(code):
             "%"
         ):
             space()
-            add(token)
+            current.append(token)
             space()
 
         elif token == ";":
-            add(";")
+            current.append(";")
             flush()
 
         else:
-            if current:
-                last = current[-1]
-
-                if (
-                    not last.endswith((" ", "(", ".", "["))
-                    and token not in (")", "]")
-                ):
-                    space()
-
-            add(token)
+            if current and not current[-1].endswith((" ", "(", ".", "[")):
+                current.append(" ")
+            current.append(token)
 
         previous = token
+        i += 1
 
     flush()
 
@@ -205,6 +175,3 @@ def Pretty(code):
         result = result.replace(k, v)
 
     return result
-
-
-print(Pretty("local function B(B)return"))
