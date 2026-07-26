@@ -101,10 +101,13 @@ def decode_char(lua):
             while pos < len(lua):
                 if lua[pos] == "(":
                     depth += 1
+
                 elif lua[pos] == ")":
                     depth -= 1
+
                     if depth == 0:
                         break
+
                 pos += 1
 
             inside = lua[m.end():pos]
@@ -140,6 +143,12 @@ def decode_strings(lua):
         def convert(match):
             x = match.group(0)
 
+            if x.startswith("\\u{"):
+                try:
+                    return chr(int(x[3:-1], 16))
+                except:
+                    return x
+
             if x.startswith("\\u"):
                 try:
                     return chr(int(x[2:], 16))
@@ -170,7 +179,7 @@ def decode_strings(lua):
             return escapes.get(x, x)
 
         return re.sub(
-            r"\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|\\[0-9]{1,3}|\\.",
+            r"\\u\{[0-9a-fA-F]+\}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|\\[0-9]{1,3}|\\.",
             convert,
             s
         )
