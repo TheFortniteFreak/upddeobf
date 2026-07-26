@@ -1,135 +1,220 @@
 import re
 
-def Pretty(code):
-    protected = []
 
-    def protect(match):
-        protected.append(match.group(0))
-        return f"___PROTECTED_{len(protected)-1}___"
+def pretty(code):
+    saved = {}
+    counter = 0
+
+    def protect(m):
+        nonlocal counter
+        key = f"___LUA_LITERAL_{counter}___"
+        saved[key] = m.group(0)
+        counter += 1
+        return key
 
     code = re.sub(
-        r'(--\[\[.*?\]\]|--[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\[\[.*?\]\])',
+        r"""
+        "(?:\\.|[^"\\])*"
+        |
+        '(?:\\.|[^'\\])*'
+        |
+        --\[\[.*?\]\]
+        |
+        --[^\n]*
+        |
+        \[\[.*?\]\]
+        """,
         protect,
         code,
-        flags=re.S
+        flags=re.VERBOSE | re.DOTALL
     )
 
-    code = code.replace("\r\n", "\n").replace("\r", "\n")
-
-    code = re.sub(
-        r"\s*(==|~=|<=|>=|//|\.{3}|[=+\-*\/<>])\s*",
-        r" \1 ",
-        code
+    tokens = re.findall(
+        r"""
+        ___LUA_LITERAL_\d+___
+        |
+        [A-Za-z_][A-Za-z0-9_]*
+        |
+        \d+(?:\.\d+)?
+        |
+        ==|~=|<=|>=|\.\.
+        |
+        [{}()\[\],;=+\-*/%^<>.]
+        """,
+        code,
+        flags=re.VERBOSE
     )
 
-    code = re.sub(r"\s*,\s*", ", ", code)
+    lines = []
+    current = []
 
-    code = re.sub(r"\(\s*", "(", code)
-    code = re.sub(r"\s*\)", ")", code)
-
-    code = re.sub(
-        r"(___PROTECTED_\d+___|\b[A-Za-z_][A-Za-z0-9_\.\[\]]*)\s+"
-        r"(?=(local\b|function\b|if\b|for\b|while\b|return\b|print\s*\())",
-        r"\1\n",
-        code
-    )
-
-    code = re.sub(
-        r"(\S.*?=.*?)\s+(?=[A-Za-z_][A-Za-z0-9_\.\[\]]*\s*=)",
-        r"\1\n",
-        code
-    )
-
-    code = re.sub(r"\s*(then)\s*", r" \1\n", code)
-    code = re.sub(r"\s*(do)\s*", r" \1\n", code)
-
-    code = re.sub(
-        r"\s*elseif\s+",
-        "\nelseif ",
-        code
-    )
-
-    code = re.sub(
-        r"\s*else\s*(?!if\b)",
-        "\nelse\n",
-        code
-    )
-
-    code = re.sub(
-        r"\s*(end)\s*",
-        "\nend\n",
-        code
-    )
-
-    code = re.sub(
-        r"\n\s*\n+",
-        "\n\n",
-        code
-    )
-
-
-    lines = code.split("\n")
-
-    output = []
     indent = 0
+    paren = 0
+    function_mode = None
+    function_header = False
 
-    for line in lines:
-        line = line.strip()
+    statement_words = {
+        "if",
+        "for",
+        "while",
+        "function",
+        "local",
+        "return",
+        "repeat"
+    }
 
-        if not line:
+    def flush():
+        nonlocal current
+        if current:
+            text = "".join(current).strip()
+            if text:
+                lines.append("\t" * indent + text)
+            current = []
+
+    def add(x):
+        current.append(x)
+
+    def space():
+        if current and not current[-1].endswith(" "):
+            current.append(" ")
+
+    previous = None
+
+    for token in tokens:
+
+        if token in ("end", "until"):
+            flush()
+            indent = max(indent - 1, 0)
+            lines.append("\t" * indent + token)
+            previous = token
             continue
 
-        if (
-            line == "end"
-            or line.startswith("end ")
-            or line.startswith("else")
-            or line.startswith("elseif")
-            or line.startswith("until")
-        ):
+        if token in ("else", "elseif"):
+            flush()
             indent = max(indent - 1, 0)
+            lines.append("\t" * indent + token)
+            indent += 1
+            previous = token
+            continue
+
+        if token == "function":
+
+            function_mode = "expression" if previous == "=" else "declaration"
+
+            add("function")
+            space()
+
+            function_header = True
+
+            previous = token
+            continue
 
 
-        output.append("    " * indent + line)
+        if function_header:
+
+            add(token)
+
+            if token == "(":
+                paren += 1
+
+            elif token == ")":
+                paren -= 1
+
+                if paren == 0:
+                    flush()
+                    indent += 1
+                    function_header = False
+
+            previous = token
+            continue
 
 
-        opens = False
+        if token in ("then", "do"):
 
-        if re.search(r"\bfunction\s*\(", line):
-            opens = True
-
-        elif re.match(r"^(local\s+)?function\b", line):
-            opens = True
-
-        elif re.match(r"^if\b.*\bthen$", line):
-            opens = True
-
-        elif re.match(r"^for\b.*\bdo$", line):
-            opens = True
-
-        elif re.match(r"^while\b.*\bdo$", line):
-            opens = True
-
-        elif line == "repeat":
-            opens = True
-
-
-        if opens:
+            space()
+            add(token)
+            flush()
             indent += 1
 
+            previous = token
+            continue
 
-        if line.startswith("until"):
-            indent = max(indent - 1, 0)
+
+        if (
+            token in statement_words
+            and current
+            and previous not in ("then", "do", "=")
+        ):
+            flush()
 
 
-    code = "\n".join(output)
+        if token == "(":
+            add("(")
 
-    def restore(match):
-        return protected[int(match.group(1))]
+        elif token == ")":
 
-    code = re.sub(
-        r"___PROTECTED_(\d+)___",
-        restore,
-        code
-    )
+            if current and current[-1] == " ":
+                current.pop()
 
-    return code
+            add(")")
+
+
+        elif token == ",":
+
+            if current and current[-1] == " ":
+                current.pop()
+
+            add(", ")
+
+
+        elif token in (
+            "=",
+            "==",
+            "~=",
+            "<",
+            ">",
+            "<=",
+            ">=",
+            "+",
+            "-",
+            "*",
+            "/",
+            "%"
+        ):
+
+            space()
+            add(token)
+            space()
+
+
+        elif token == ";":
+
+            add(";")
+            flush()
+
+
+        else:
+
+            if current:
+                last = current[-1]
+
+                if (
+                    not last.endswith((" ", "(", ".", "["))
+                    and token not in (")", "]")
+                ):
+                    space()
+
+            add(token)
+
+
+        previous = token
+
+
+    flush()
+
+    result = "\n".join(lines)
+
+    for k, v in saved.items():
+        result = result.replace(k, v)
+
+    return result
