@@ -7,10 +7,10 @@ def Pretty(code):
 
     def protect(m):
         nonlocal counter
-        key = f"___LUA_LITERAL_{counter}___"
-        saved[key] = m.group(0)
+        k = f"___LUA_LITERAL_{counter}___"
+        saved[k] = m.group(0)
         counter += 1
-        return key
+        return k
 
     code = re.sub(
         r"""
@@ -29,12 +29,6 @@ def Pretty(code):
         flags=re.VERBOSE | re.DOTALL
     )
 
-    code = re.sub(
-        r"\s+(?=(local|function|if|for|while|repeat|return|break)\b)",
-        "\n",
-        code
-    )
-
     tokens = re.findall(
         r"""
         ___LUA_LITERAL_\d+___
@@ -47,7 +41,7 @@ def Pretty(code):
         |
         ==|~=|<=|>=|\.\.
         |
-        [{}()\[\],;=+\-*/%^#<>.]
+        [{}()\[\],;=+\-*/%^#<>.:]
         """,
         code,
         flags=re.VERBOSE
@@ -56,110 +50,129 @@ def Pretty(code):
     lines = []
     current = []
     indent = 0
+
     paren = 0
     bracket = 0
+    block = 0
 
-    def flush():
+    def emit():
         nonlocal current
-        if current:
-            s = "".join(current).strip()
-            if s:
-                lines.append("\t" * indent + s)
-            current = []
+        s = "".join(current).strip()
+        if s:
+            lines.append("\t" * indent + s)
+        current = []
+
+    def add(x):
+        current.append(x)
 
     def space():
         if current and not current[-1].endswith(" "):
             current.append(" ")
 
-    def is_ident(x):
+    def remove_space():
+        if current and current[-1] == " ":
+            current.pop()
+
+    def ident(x):
         return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", x or ""))
 
+    keywords_block = {
+        "if",
+        "for",
+        "while",
+        "repeat",
+        "function"
+    }
+
     i = 0
-    previous = None
+    prev = None
 
     while i < len(tokens):
-        token = tokens[i]
-        nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+        t = tokens[i]
+        n = tokens[i + 1] if i + 1 < len(tokens) else None
 
-        if token in ("end", "until"):
-            flush()
-            indent = max(indent - 1, 0)
-            lines.append("\t" * indent + token)
-            previous = token
-            i += 1
-            continue
-
-        if token in ("else", "elseif"):
-            flush()
-            indent = max(indent - 1, 0)
-            lines.append("\t" * indent + token)
-            indent += 1
-            previous = token
-            i += 1
-            continue
-
-        if token in ("then", "do"):
-            space()
-            current.append(token)
-            flush()
-            indent += 1
-            previous = token
-            i += 1
-            continue
-
-        if (
-            token == "local"
-            and current
-            and paren == 0
-            and bracket == 0
-        ):
-            flush()
-
-        if (
-            is_ident(token)
-            and nxt == "="
-            and current
-            and paren == 0
-            and bracket == 0
-            and previous not in (
-                "local",
-                "function"
-            )
-        ):
-            flush()
-
-        if token == "function":
-            if current:
+        if t == "end":
+            if paren == 0 and bracket == 0 and block > 0:
+                emit()
+                indent = max(indent - 1, 0)
+                block -= 1
+                lines.append("\t" * indent + "end")
+            else:
                 space()
-            current.append("function")
-            space()
+                add("end")
 
-        elif token == "(":
-            current.append("(")
+            prev = t
+            i += 1
+            continue
+
+        if t == "until":
+            emit()
+            indent = max(indent - 1, 0)
+            lines.append("\t" * indent + "until")
+            prev = t
+            i += 1
+            continue
+
+        if t in ("else", "elseif"):
+            emit()
+            indent = max(indent - 1, 0)
+            lines.append("\t" * indent + t)
+            indent += 1
+            prev = t
+            i += 1
+            continue
+
+        if t in ("then", "do"):
+            space()
+            add(t)
+            emit()
+            indent += 1
+            block += 1
+            prev = t
+            i += 1
+            continue
+
+        if t == "function":
+            if current and current[-1] != " ":
+                space()
+            add("function")
+            prev = t
+            i += 1
+            continue
+
+        if t == "(":
+            remove_space()
+            add("(")
             paren += 1
 
-        elif token == ")":
-            if current and current[-1] == " ":
-                current.pop()
-            current.append(")")
-            paren = max(paren - 1, 0)
+        elif t == ")":
+            remove_space()
+            add(")")
+            paren = max(0, paren - 1)
 
-        elif token == "[":
-            current.append("[")
+        elif t == "[":
+            remove_space()
+            add("[")
             bracket += 1
 
-        elif token == "]":
-            if current and current[-1] == " ":
-                current.pop()
-            current.append("]")
-            bracket = max(bracket - 1, 0)
+        elif t == "]":
+            remove_space()
+            add("]")
+            bracket = max(0, bracket - 1)
 
-        elif token == ",":
-            if current and current[-1] == " ":
-                current.pop()
-            current.append(", ")
+        elif t == ".":
+            remove_space()
+            add(".")
 
-        elif token in (
+        elif t == ",":
+            remove_space()
+            add(", ")
+
+        elif t == ";":
+            add(";")
+            emit()
+
+        elif t in {
             "=",
             "==",
             "~=",
@@ -173,24 +186,32 @@ def Pretty(code):
             "/",
             "%",
             "^"
-        ):
+        }:
             space()
-            current.append(token)
+            add(t)
             space()
-
-        elif token == ";":
-            current.append(";")
-            flush()
 
         else:
-            if current and not current[-1].endswith((" ", "(", "[", ".")):
-                current.append(" ")
-            current.append(token)
+            if current:
+                last = current[-1]
+                if (
+                    not last.endswith((" ", "(", "[", ".", ":"))
+                    and t not in (")", "]")
+                ):
+                    space()
 
-        previous = token
+            add(t)
+
+        if (
+            t == "local"
+            and n == "function"
+        ):
+            pass
+
+        prev = t
         i += 1
 
-    flush()
+    emit()
 
     result = "\n".join(lines)
 
