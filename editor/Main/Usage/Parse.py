@@ -45,12 +45,14 @@ def split_args(s):
     for c in s:
         if c == "(":
             depth += 1
+
         elif c == ")":
             depth -= 1
 
         if c == "," and depth == 0:
             out.append(cur)
             cur = ""
+
         else:
             cur += c
 
@@ -142,11 +144,7 @@ def decode_strings(lua):
     def decode_content(s):
         def convert(match):
             x = match.group(0)
-
-            if x.lower() in (
-                r"\u{000a}",
-                r"\x0a",
-            ):
+            if re.fullmatch(r"\\u\{0*a\}|\\x0a", x.lower()):
                 return r"\n"
 
             if x.startswith("\\u{"):
