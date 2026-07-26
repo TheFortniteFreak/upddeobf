@@ -1,17 +1,6 @@
-import subprocess
-import sys
 import tempfile
 import os
-
-package = "luastyle"
-
-subprocess.check_call([
-    sys.executable,
-    "-m",
-    "pip",
-    "install",
-    package
-])
+import luastyle
 
 def Pretty(code):
     with tempfile.NamedTemporaryFile(
@@ -23,12 +12,11 @@ def Pretty(code):
         filename = f.name
 
     try:
-        result = subprocess.run(
-            ["luastyle", filename],
-            capture_output=True,
-            text=True
-        )
+        with open(filename, "r", encoding="utf-8") as f:
+            lua_code = f.read()
 
-        return result.stdout
+        # Use the imported luastyle package here
+        return luastyle.format(lua_code)
+
     finally:
         os.remove(filename)
