@@ -8,6 +8,8 @@ def Main(script, *args):
         script = Usage.FixV(script)
     if "--parse" in args:
         script = Usage.Parse(script)
+    if "--pretty" in args:
+        script = Usage.Pretty(script)
 
     return script
 
