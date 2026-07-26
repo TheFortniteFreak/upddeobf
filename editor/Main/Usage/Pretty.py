@@ -1,7 +1,7 @@
 import re
 
 
-def pretty(code):
+def Pretty(code):
     saved = {}
     counter = 0
 
