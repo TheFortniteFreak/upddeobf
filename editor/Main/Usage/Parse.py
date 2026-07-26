@@ -143,6 +143,12 @@ def decode_strings(lua):
         def convert(match):
             x = match.group(0)
 
+            if x.lower() in (
+                r"\u{000a}",
+                r"\x0a",
+            ):
+                return r"\n"
+
             if x.startswith("\\u{"):
                 try:
                     return chr(int(x[3:-1], 16))
@@ -194,6 +200,7 @@ def Parse(lua):
 
     while last != lua:
         last = lua
+
         lua = decode_math(lua)
         lua = decode_char(lua)
         lua = decode_strings(lua)
