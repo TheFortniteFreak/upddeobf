@@ -7,7 +7,6 @@ def FixV(code):
     variables = {}
     functions = {}
 
-    # Protect strings/comments
     protected = []
 
     def protect(match):
@@ -21,8 +20,15 @@ def FixV(code):
         flags=re.S
     )
 
+    def new_var(old):
+        nonlocal var_counter
 
-    # Functions
+        if old not in variables:
+            variables[old] = f"v{var_counter}"
+            var_counter += 1
+
+        return variables[old]
+
     def replace_function(match):
         nonlocal func_counter
 
@@ -35,42 +41,81 @@ def FixV(code):
 
         return f"{prefix}function {functions[old]}"
 
-
     code = re.sub(
         r"\b(local\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)",
         replace_function,
         code
     )
 
+    def replace_params(match):
+        func = match.group(1)
+        params = match.group(2)
 
-    # Variables only when assigned
-    def replace_variable(match):
-        nonlocal var_counter
+        if not params.strip():
+            return f"{func}()"
 
-        old = match.group(1)
+        result = []
 
-        if old not in variables:
-            variables[old] = f"v{var_counter}"
-            var_counter += 1
+        for p in params.split(","):
+            p = p.strip()
 
-        return variables[old] + match.group(2)
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", p):
+                result.append(new_var(p))
+            else:
+                result.append(p)
 
+        return f"{func}({','.join(result)})"
 
     code = re.sub(
-        r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)",
-        replace_variable,
+        r"\b(function\s+f\d+)\s*\(([^)]*)\)",
+        replace_params,
         code
     )
 
+    def replace_for(match):
+        vars_part = match.group(1)
+        names = []
 
-    # Replace references
+        for v in vars_part.split(","):
+            v = v.strip()
+
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", v):
+                names.append(new_var(v))
+            else:
+                names.append(v)
+
+        return "for " + ",".join(names) + " in"
+
+    code = re.sub(
+        r"\bfor\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s+in\b",
+        replace_for,
+        code
+    )
+
+    def replace_local(match):
+        return "local " + new_var(match.group(1))
+
+    code = re.sub(
+        r"\blocal\s+([A-Za-z_][A-Za-z0-9_]*)",
+        replace_local,
+        code
+    )
+
+    def replace_assignment(match):
+        return new_var(match.group(1)) + match.group(2)
+
+    code = re.sub(
+        r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)",
+        replace_assignment,
+        code
+    )
+
     for old, new in functions.items():
         code = re.sub(
             rf"(?<![A-Za-z0-9_]){re.escape(old)}(?![A-Za-z0-9_])",
             new,
             code
         )
-
 
     for old, new in variables.items():
         code = re.sub(
@@ -79,15 +124,9 @@ def FixV(code):
             code
         )
 
-
-    # Restore strings/comments
-    def restore(match):
-        return protected[int(match.group(1))]
-
-
     code = re.sub(
         r"___PROTECTED_(\d+)___",
-        restore,
+        lambda m: protected[int(m.group(1))],
         code
     )
 
