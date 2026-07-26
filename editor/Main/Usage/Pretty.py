@@ -29,9 +29,17 @@ def Pretty(code):
         flags=re.VERBOSE | re.DOTALL
     )
 
+    code = re.sub(
+        r"\s+(?=(local|function|if|for|while|repeat|return|break)\b)",
+        "\n",
+        code
+    )
+
     tokens = re.findall(
         r"""
         ___LUA_LITERAL_\d+___
+        |
+        \.\.\.
         |
         [A-Za-z_][A-Za-z0-9_]*
         |
@@ -49,20 +57,21 @@ def Pretty(code):
     current = []
     indent = 0
     paren = 0
+    bracket = 0
 
     def flush():
         nonlocal current
         if current:
-            text = "".join(current).strip()
-            if text:
-                lines.append("\t" * indent + text)
+            s = "".join(current).strip()
+            if s:
+                lines.append("\t" * indent + s)
             current = []
 
     def space():
         if current and not current[-1].endswith(" "):
             current.append(" ")
 
-    def ident(x):
+    def is_ident(x):
         return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", x or ""))
 
     i = 0
@@ -71,7 +80,6 @@ def Pretty(code):
     while i < len(tokens):
         token = tokens[i]
         nxt = tokens[i + 1] if i + 1 < len(tokens) else None
-        nxt2 = tokens[i + 2] if i + 2 < len(tokens) else None
 
         if token in ("end", "until"):
             flush()
@@ -100,18 +108,22 @@ def Pretty(code):
             continue
 
         if (
-            current
-            and ident(token)
-            and (
-                nxt == "="
-                or nxt == "("
-            )
+            token == "local"
+            and current
+            and paren == 0
+            and bracket == 0
+        ):
+            flush()
+
+        if (
+            is_ident(token)
+            and nxt == "="
+            and current
+            and paren == 0
+            and bracket == 0
             and previous not in (
                 "local",
-                "function",
-                "if",
-                "for",
-                "while"
+                "function"
             )
         ):
             flush()
@@ -130,7 +142,17 @@ def Pretty(code):
             if current and current[-1] == " ":
                 current.pop()
             current.append(")")
-            paren -= 1
+            paren = max(paren - 1, 0)
+
+        elif token == "[":
+            current.append("[")
+            bracket += 1
+
+        elif token == "]":
+            if current and current[-1] == " ":
+                current.pop()
+            current.append("]")
+            bracket = max(bracket - 1, 0)
 
         elif token == ",":
             if current and current[-1] == " ":
@@ -149,7 +171,8 @@ def Pretty(code):
             "-",
             "*",
             "/",
-            "%"
+            "%",
+            "^"
         ):
             space()
             current.append(token)
@@ -160,7 +183,7 @@ def Pretty(code):
             flush()
 
         else:
-            if current and not current[-1].endswith((" ", "(", ".", "[")):
+            if current and not current[-1].endswith((" ", "(", "[", ".")):
                 current.append(" ")
             current.append(token)
 
