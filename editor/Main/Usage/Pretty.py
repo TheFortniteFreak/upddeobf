@@ -24,7 +24,7 @@ def Pretty(code):
     code = re.sub(r"\s*\)", ")", code)
 
     code = re.sub(
-        r'\s+(?=(function\s+|if\s+|elseif\s+|else\b|for\s+|while\s+|repeat\b|return\s+|print\s*\(|[A-Za-z_][A-Za-z0-9_]*\s*=))',
+        r'\s+(?=(function\s+|if\s+|elseif\s+|else\b|for\s+|while\s+|repeat\b|return\s+|print\s*\())',
         "\n",
         code
     )
