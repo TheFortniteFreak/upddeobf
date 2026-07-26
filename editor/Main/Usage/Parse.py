@@ -161,22 +161,13 @@ def decode_strings(lua):
                 except:
                     return x
 
-            if x[1:].isdigit():
+            if re.fullmatch(r"\\[0-9]{1,3}", x):
                 try:
                     return chr(int(x[1:], 10))
                 except:
                     return x
 
-            escapes = {
-                "\\n": "\n",
-                "\\r": "\r",
-                "\\t": "\t",
-                "\\\\": "\\",
-                '\\"': '"',
-                "\\'": "'",
-            }
-
-            return escapes.get(x, x)
+            return x
 
         return re.sub(
             r"\\u\{[0-9a-fA-F]+\}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|\\[0-9]{1,3}|\\.",
