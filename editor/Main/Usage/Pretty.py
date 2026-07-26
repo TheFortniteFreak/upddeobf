@@ -50,7 +50,6 @@ def Pretty(code):
 
     indent = 0
     paren = 0
-    function_mode = None
     function_header = False
 
     statement_words = {
@@ -98,26 +97,27 @@ def Pretty(code):
             continue
 
         if token == "function":
-
-            function_mode = "expression" if previous == "=" else "declaration"
+            if current:
+                space()
 
             add("function")
             space()
-
             function_header = True
+            paren = 0
 
             previous = token
             continue
 
-
         if function_header:
-
-            add(token)
-
             if token == "(":
+                add("(")
                 paren += 1
 
             elif token == ")":
+                if current and current[-1] == " ":
+                    current.pop()
+
+                add(")")
                 paren -= 1
 
                 if paren == 0:
@@ -125,20 +125,21 @@ def Pretty(code):
                     indent += 1
                     function_header = False
 
+            else:
+                if current and not current[-1].endswith((" ", "(")):
+                    space()
+                add(token)
+
             previous = token
             continue
 
-
         if token in ("then", "do"):
-
             space()
             add(token)
             flush()
             indent += 1
-
             previous = token
             continue
-
 
         if (
             token in statement_words
@@ -147,25 +148,18 @@ def Pretty(code):
         ):
             flush()
 
-
         if token == "(":
             add("(")
 
         elif token == ")":
-
             if current and current[-1] == " ":
                 current.pop()
-
             add(")")
 
-
         elif token == ",":
-
             if current and current[-1] == " ":
                 current.pop()
-
             add(", ")
-
 
         elif token in (
             "=",
@@ -181,20 +175,15 @@ def Pretty(code):
             "/",
             "%"
         ):
-
             space()
             add(token)
             space()
 
-
         elif token == ";":
-
             add(";")
             flush()
 
-
         else:
-
             if current:
                 last = current[-1]
 
@@ -206,9 +195,7 @@ def Pretty(code):
 
             add(token)
 
-
         previous = token
-
 
     flush()
 
@@ -218,3 +205,6 @@ def Pretty(code):
         result = result.replace(k, v)
 
     return result
+
+
+print(Pretty("local function B(B)return"))
