@@ -21,3 +21,4 @@ def Pretty(code: str) -> str:
     with urllib.request.urlopen(req) as response:
         data = json.loads(response.read().decode('utf-8'))
         return data["formatted"]
+    return code
