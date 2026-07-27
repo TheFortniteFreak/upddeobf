@@ -4,10 +4,13 @@ import os
 
 def Main(script, *args):
     internet = True
-
+        
     if "--nointernet" in args:
         internet = False
 
+    if "--rcom" in args:
+        script = Usage.RCom(script)
+    
     if "--fixv" in args:
         script = Usage.FixV(script)
 
@@ -19,8 +22,6 @@ def Main(script, *args):
 
     if "--rdead" in args:
         script = Usage.RDead(script)
-    if "--rcom" in args:
-        script = Usage.RCom(script)
 
     return script
 
