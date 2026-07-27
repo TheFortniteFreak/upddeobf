@@ -1,15 +1,6 @@
 import Usage
 import sys
 import os
-import re
-
-def RemoveComments(script):
-    script = re.sub(r'--\[\[.*?\]\]', '', script, flags=re.DOTALL)
-
-    script = re.sub(r'--(?!\[).*$', '', script, flags=re.MULTILINE)
-
-    return script
-
 
 def Main(script, *args):
     internet = True
@@ -28,6 +19,8 @@ def Main(script, *args):
 
     if "--rdead" in args:
         script = Usage.RDead(script)
+    if "--rcom" in args:
+        script = Usage.RCom(script)
 
     return script
 
