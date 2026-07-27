@@ -311,5 +311,5 @@ def Pretty(code,internet):
     try:
         return NIntPretty(code)
     except:
-        
+        pass
     return code 
