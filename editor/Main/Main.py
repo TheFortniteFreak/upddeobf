@@ -13,7 +13,6 @@ def RemoveComments(script):
 def Main(script, *args):
     internet = True
 
-    script = RemoveComments(script)
 
     if "--nointernet" in args:
         internet = False
