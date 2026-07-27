@@ -3,13 +3,17 @@ import sys
 import os
 
 def Main(script, *args):
-
+    internet = True
+    if "--nointernet" in args:
+        internet = False
     if "--fixv" in args:
         script = Usage.FixV(script)
     if "--parse" in args:
         script = Usage.Parse(script)
     if "--pretty" in args:
-        script = Usage.Pretty(script)
+        script = Usage.Pretty(script,internet)
+    if "--rdead" in args:
+        script = Usage.RDead(script)
 
     return script
 
