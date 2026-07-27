@@ -285,21 +285,23 @@ def decode_compare(lua):
 
 def decode_math(lua):
 
-    pattern = r"(?<![\w\"'])(\d+(?:\.\d+)?(?:\s*[\+\-\*/\^]\s*\d+(?:\.\d+)?)+)(?![\w\"'])"
+    pattern = r"\(([\d\s\+\-\*/\^\(\)\.]+)\)"
 
 
     def repl(m):
 
         try:
 
-            value = safe_eval(m.group(1))
+            value = safe_eval(
+                m.group(1)
+            )
 
 
             if isinstance(value, float) and value.is_integer():
                 value = int(value)
 
 
-            return str(value)
+            return "(" + str(value) + ")"
 
 
         except:
@@ -307,12 +309,19 @@ def decode_math(lua):
             return m.group(0)
 
 
+    old = None
 
-    return re.sub(
-        pattern,
-        repl,
-        lua
-    )
+    while old != lua:
+
+        old = lua
+        lua = re.sub(
+            pattern,
+            repl,
+            lua
+        )
+
+
+    return lua
 
 
 
