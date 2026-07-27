@@ -32,12 +32,10 @@ def safe_eval(expr):
 
     tree = ast.parse(expr, mode="eval")
 
-
     def calc(node):
 
         if isinstance(node, ast.Constant):
             return node.value
-
 
         if isinstance(node, ast.Name):
 
@@ -46,7 +44,6 @@ def safe_eval(expr):
 
             raise ValueError()
 
-
         if isinstance(node, ast.BinOp):
 
             return ops[type(node.op)](
@@ -54,23 +51,16 @@ def safe_eval(expr):
                 calc(node.right)
             )
 
-
         if isinstance(node, ast.UnaryOp):
-
             return -calc(node.operand)
-
 
         if isinstance(node, ast.Call):
 
-            if (
-                isinstance(node.func, ast.Name)
-                and node.func.id == "len"
-            ):
-                return len(calc(node.args[0]))
-
+            if isinstance(node.func, ast.Name):
+                if node.func.id == "len":
+                    return len(calc(node.args[0]))
 
         raise ValueError()
-
 
     return calc(tree.body)
 
@@ -90,14 +80,12 @@ def split_args(s):
         elif c == ")":
             depth -= 1
 
-
         if c == "," and depth == 0:
             out.append(cur)
             cur = ""
 
         else:
             cur += c
-
 
     if cur:
         out.append(cur)
@@ -106,45 +94,52 @@ def split_args(s):
 
 
 
-def decode_vars(lua):
+def decode_strings(lua):
+
+    def convert(m):
+
+        x = m.group(0)
+
+        if x.startswith("\\x"):
+            return chr(int(x[2:], 16))
+
+        if x.startswith("\\u{"):
+            return chr(int(x[3:-1], 16))
+
+        if x.startswith("\\u"):
+            return chr(int(x[2:], 16))
+
+        if re.fullmatch(r"\\[0-9]{1,3}", x):
+            return chr(int(x[1:], 10))
+
+        return {
+            "\\n": "\n",
+            "\\r": "\r",
+            "\\t": "\t",
+            "\\\\": "\\",
+            '\\"': '"',
+            "\\'": "'"
+        }.get(x, x)
+
 
     def repl(m):
 
-        name = m.group(1)
-        value = m.group(2).strip()
+        body = m.group(2)
 
+        body = re.sub(
+            r"\\u\{[0-9a-fA-F]+\}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|\\[0-9]{1,3}|\\.",
+            convert,
+            body
+        )
 
-        try:
-
-            if value == "true":
-                variables[name] = True
-
-            elif value == "false":
-                variables[name] = False
-
-            elif value == "nil":
-                variables[name] = None
-
-            elif value[0] in "\"'":
-                variables[name] = ast.literal_eval(value)
-
-            else:
-                variables[name] = safe_eval(value)
-
-
-            return ""
-
-
-        except:
-
-            return m.group(0)
-
+        return repr(body)
 
 
     return re.sub(
-        r"(?:local\s+)?([A-Za-z_]\w*)\s*=\s*(?![=])([^\n]+)",
+        r'(["\'])(.*?)(?<!\\)\1',
         repl,
-        lua
+        lua,
+        flags=re.S
     )
 
 
@@ -155,13 +150,11 @@ def decode_char(lua):
 
         found = False
 
-
         for m in re.finditer(r"string\.char\(", lua):
 
             start = m.start()
             pos = m.end()
             depth = 1
-
 
             while pos < len(lua):
 
@@ -177,109 +170,142 @@ def decode_char(lua):
 
                 pos += 1
 
-
             inside = lua[m.end():pos]
-
 
             try:
 
-                chars = []
-
-                for x in split_args(inside):
-                    chars.append(chr(int(x.strip())))
-
+                result = "".join(
+                    chr(int(x.strip()))
+                    for x in split_args(inside)
+                )
 
                 lua = (
                     lua[:start]
-                    +
-                    repr("".join(chars))
-                    +
-                    lua[pos + 1:]
+                    + repr(result)
+                    + lua[pos + 1:]
                 )
-
 
                 found = True
                 break
 
-
             except:
                 pass
 
-
         if not found:
             break
-
 
     return lua
 
 
 
-def decode_strings(lua):
+def decode_vars(lua):
 
-    def convert(match):
+    def repl(m):
 
-        x = match.group(0)
+        name = m.group(1)
+        value = m.group(2).strip()
+
+        try:
+
+            if value == "true":
+                variables[name] = True
+
+            elif value == "false":
+                variables[name] = False
+
+            elif value == "nil":
+                variables[name] = None
+
+            else:
+                variables[name] = safe_eval(value)
+
+            return ""
+
+        except:
+
+            return m.group(0)
+
+    return re.sub(
+        r"(?:local\s+)?([A-Za-z_]\w*)\s*=\s*(?![=])([^\n]+)",
+        repl,
+        lua
+    )
 
 
-        if x.startswith("\\x"):
-            return chr(int(x[2:], 16))
 
+def decode_assign(lua):
 
-        if x.startswith("\\u{"):
-            return chr(int(x[3:-1], 16))
+    def repl(m):
 
+        name = m.group(1)
+        expr = m.group(2)
 
-        if x.startswith("\\u"):
-            return chr(int(x[2:], 16))
+        try:
 
+            variables[name] = safe_eval(expr)
 
-        if re.fullmatch(r"\\[0-9]{1,3}", x):
-            return chr(int(x[1:], 10))
+            return ""
 
+        except:
 
-        return {
-            "\\n": "\n",
-            "\\r": "\r",
-            "\\t": "\t",
-            "\\\\": "\\",
-            '\\"': '"',
-            "\\'": "'",
-        }.get(x, x)
-
+            return m.group(0)
 
 
     return re.sub(
-        r'(["\'])(.*?)(?<!\\)\1',
-        lambda m:
-            m.group(1)
-            +
-            re.sub(
-                r"\\u\{[0-9a-fA-F]+\}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|\\[0-9]{1,3}|\\.",
-                convert,
-                m.group(2)
-            )
-            +
-            m.group(1),
-        lua,
-        flags=re.S
+        r"\b([A-Za-z_]\w*)\s*=\s*(?![=])([^\n]+)",
+        repl,
+        lua
+    )
+
+
+
+def replace_vars(lua):
+
+    def repl(m):
+
+        name = m.group(0)
+
+        if name not in variables:
+            return name
+
+        value = variables[name]
+
+        if isinstance(value, str):
+            return repr(value)
+
+        if value is True:
+            return "true"
+
+        if value is False:
+            return "false"
+
+        if value is None:
+            return "nil"
+
+        return str(value)
+
+
+    return re.sub(
+        r"\b[A-Za-z_]\w*\b",
+        repl,
+        lua
     )
 
 
 
 def decode_length(lua):
+
     lua = re.sub(
-        r'#((?:"(?:\\.|[^"])*")|(?:\'(?:\\.|[^\'])*\'))',
+        r'#(["\'].*?["\'])',
         r'len(\1)',
         lua
     )
-
 
     lua = re.sub(
         r'#([A-Za-z_]\w*)',
         r'len(\1)',
         lua
     )
-
 
     return lua
 
@@ -289,83 +315,89 @@ def decode_compare(lua):
 
     def repl(m):
 
-        left = m.group(1)
-        op = m.group(2)
-        right = m.group(3)
-
-
         try:
 
-            left = safe_eval(left)
-            right = safe_eval(right)
-
+            left = safe_eval(m.group(1))
+            right = safe_eval(m.group(3))
 
             return (
                 "true"
-                if compare_ops[op](left, right)
+                if compare_ops[m.group(2)](left, right)
                 else "false"
             )
-
 
         except:
 
             return m.group(0)
 
 
-
-    pattern = (
-        r'([A-Za-z_][\w]*\([^)]*\)|".*?"|\'.*?\'|[\d\.\+\-\*/\^]+|true|false)'
-        r'\s*(==|~=|<=|>=|<|>)\s*'
-        r'([A-Za-z_][\w]*\([^)]*\)|".*?"|\'.*?\'|[\d\.\+\-\*/\^]+|true|false)'
+    return re.sub(
+        r'(.+?)\s*(==|~=|<=|>=|<|>)\s*(.+?)',
+        repl,
+        lua
     )
-
-
-    old = None
-
-    while old != lua:
-
-        old = lua
-        lua = re.sub(pattern, repl, lua)
-
-
-    return lua
 
 
 
 def decode_math(lua):
 
-    pattern = r"(?<![\w\"'])((?:\d+(?:\.\d+)?|\s|[\+\-\*/%\^])+)(?![\w\"'])"
-
-
     def repl(m):
 
         try:
 
-            result = safe_eval(
-                m.group(1).strip()
-            )
+            value = safe_eval(m.group(1))
 
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
 
-            if isinstance(result, float) and result.is_integer():
-                result = int(result)
-
-
-            return str(result)
-
+            return str(value)
 
         except:
 
             return m.group(0)
 
 
+    return re.sub(
+        r"(?<![\w\"'])([\d\s\+\-\*/\^\(\)]+)(?![\w\"'])",
+        repl,
+        lua
+    )
 
-    old = None
 
-    while old != lua:
 
-        old = lua
-        lua = re.sub(pattern, repl, lua)
+def decode_if(lua):
 
+    lua = re.sub(
+        r"if\s+false\s+then.*?end",
+        "",
+        lua,
+        flags=re.S
+    )
+
+    lua = re.sub(
+        r"if\s+true\s+then(.*?)end",
+        r"\1",
+        lua,
+        flags=re.S
+    )
+
+    return lua
+
+
+
+def remove_unused(lua):
+
+    used = set(
+        re.findall(
+            r"\b[A-Za-z_]\w*\b",
+            lua
+        )
+    )
+
+    for name in list(variables):
+
+        if name not in used:
+            variables.pop(name, None)
 
     return lua
 
@@ -377,20 +409,22 @@ def Parse(lua):
 
     variables = {}
 
+    old = None
 
-    last = None
+    while old != lua:
 
+        old = lua
 
-    while last != lua:
-
-        last = lua
-
-        lua = decode_vars(lua)
-        lua = decode_char(lua)
         lua = decode_strings(lua)
+        lua = decode_char(lua)
+        lua = decode_vars(lua)
+        lua = decode_assign(lua)
+        lua = replace_vars(lua)
         lua = decode_length(lua)
         lua = decode_compare(lua)
         lua = decode_math(lua)
+        lua = decode_if(lua)
 
+    lua = remove_unused(lua)
 
-    return lua
+    return lua.strip()
