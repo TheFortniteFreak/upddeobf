@@ -15,8 +15,19 @@ ops = {
 }
 
 
+compare_ops = {
+    "==": operator.eq,
+    "~=": operator.ne,
+    "<": operator.lt,
+    ">": operator.gt,
+    "<=": operator.le,
+    ">=": operator.ge,
+}
+
+
 def safe_eval(expr):
     expr = expr.replace("^", "**")
+
     tree = ast.parse(expr, mode="eval")
 
     def calc(node):
@@ -62,45 +73,18 @@ def split_args(s):
     return out
 
 
-def decode_math(lua):
-    pattern = r"(?<![\w\"'])((?:\d+(?:\.\d+)?|\s|[\+\-\*/%\^])+)(?![\w\"'])"
-
-    def repl(m):
-        expr = m.group(1).strip()
-
-        if not re.search(r"[\+\-\*/%\^]", expr):
-            return m.group(0)
-
-        try:
-            result = safe_eval(expr)
-
-            if isinstance(result, float) and result.is_integer():
-                result = int(result)
-
-            return str(result)
-
-        except:
-            return m.group(0)
-
-    old = None
-
-    while old != lua:
-        old = lua
-        lua = re.sub(pattern, repl, lua)
-
-    return lua
-
-
 def decode_char(lua):
     while True:
         found = False
 
         for m in re.finditer(r"string\.char\(", lua):
+
             start = m.start()
             pos = m.end()
             depth = 1
 
             while pos < len(lua):
+
                 if lua[pos] == "(":
                     depth += 1
 
@@ -141,13 +125,17 @@ def decode_char(lua):
 
 
 def decode_strings(lua):
+
     def decode_content(s):
 
         def convert(match):
             x = match.group(0)
 
-            if re.fullmatch(r"\\u\{0*a\}|\\x0a", x.lower()):
-                return "\n"
+            if x.startswith("\\x"):
+                try:
+                    return chr(int(x[2:], 16))
+                except:
+                    return x
 
             if x.startswith("\\u{"):
                 try:
@@ -156,12 +144,6 @@ def decode_strings(lua):
                     return x
 
             if x.startswith("\\u"):
-                try:
-                    return chr(int(x[2:], 16))
-                except:
-                    return x
-
-            if x.startswith("\\x"):
                 try:
                     return chr(int(x[2:], 16))
                 except:
@@ -191,10 +173,13 @@ def decode_strings(lua):
         )
 
     def repl(m):
-        quote = m.group(1)
-        content = m.group(2)
-
-        return quote + decode_content(content) + quote
+        return (
+            m.group(1)
+            +
+            decode_content(m.group(2))
+            +
+            m.group(1)
+        )
 
     return re.sub(
         r'(["\'])(.*?)(?<!\\)\1',
@@ -205,12 +190,10 @@ def decode_strings(lua):
 
 
 def decode_length(lua):
+
     def repl(m):
-        content = m.group(2)
-
         try:
-            return str(len(content))
-
+            return str(len(m.group(2)))
         except:
             return m.group(0)
 
@@ -222,30 +205,93 @@ def decode_length(lua):
     )
 
 
+def decode_compare(lua):
+
+    def repl(m):
+
+        left = m.group(1)
+        op = m.group(2)
+        right = m.group(3)
+
+        try:
+
+            if left[0] in "\"'" and right[0] in "\"'":
+                left = ast.literal_eval(left)
+                right = ast.literal_eval(right)
+
+            else:
+                left = safe_eval(left)
+                right = safe_eval(right)
+
+            result = compare_ops[op](left, right)
+
+            return "true" if result else "false"
+
+        except:
+            return m.group(0)
+
+
+    pattern = (
+        r'(".*?"|\'.*?\'|[0-9\.\+\-\*/\^]+)'
+        r'\s*(==|~=|<=|>=|<|>)\s*'
+        r'(".*?"|\'.*?\'|[0-9\.\+\-\*/\^]+)'
+    )
+
+    old = None
+
+    while old != lua:
+        old = lua
+        lua = re.sub(pattern, repl, lua)
+
+    return lua
+
+
+def decode_math(lua):
+
+    pattern = r"(?<![\w\"'])((?:\d+(?:\.\d+)?|\s|[\+\-\*/%\^])+)(?![\w\"'])"
+
+
+    def repl(m):
+
+        expr = m.group(1).strip()
+
+        if not re.search(r"[\+\-\*/%\^]", expr):
+            return m.group(0)
+
+        try:
+
+            result = safe_eval(expr)
+
+            if isinstance(result, float) and result.is_integer():
+                result = int(result)
+
+            return str(result)
+
+        except:
+            return m.group(0)
+
+
+    old = None
+
+    while old != lua:
+        old = lua
+        lua = re.sub(pattern, repl, lua)
+
+    return lua
+
+
 def Parse(lua):
+
     last = None
 
     while last != lua:
+
         last = lua
 
         lua = decode_char(lua)
         lua = decode_strings(lua)
         lua = decode_length(lua)
+        lua = decode_compare(lua)
         lua = decode_math(lua)
 
     return lua
-
-
-if __name__ == "__main__":
-    tests = [
-        '#"hello"',
-        '#"\\x68\\x69"',
-        '#string.char(65,66,67)',
-        'string.char(72,101,108,108,111)',
-        '"\\x68\\x69"',
-        '2+3*4',
-        '10^2'
-    ]
-
-    for t in tests:
-        print(t, "=>", Parse(t))
