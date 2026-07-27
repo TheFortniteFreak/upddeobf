@@ -5,6 +5,7 @@ import re
 
 def RemoveComments(script):
     script = re.sub(r'--\[\[.*?\]\]', '', script, flags=re.DOTALL)
+
     script = re.sub(r'--(?!\[).*$', '', script, flags=re.MULTILINE)
 
     return script
@@ -12,7 +13,6 @@ def RemoveComments(script):
 
 def Main(script, *args):
     internet = True
-
 
     if "--nointernet" in args:
         internet = False
