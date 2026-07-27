@@ -142,10 +142,12 @@ def decode_char(lua):
 
 def decode_strings(lua):
     def decode_content(s):
+
         def convert(match):
             x = match.group(0)
+
             if re.fullmatch(r"\\u\{0*a\}|\\x0a", x.lower()):
-                return r"\n"
+                return "\n"
 
             if x.startswith("\\u{"):
                 try:
@@ -171,7 +173,16 @@ def decode_strings(lua):
                 except:
                     return x
 
-            return x
+            escapes = {
+                "\\n": "\n",
+                "\\r": "\r",
+                "\\t": "\t",
+                "\\\\": "\\",
+                '\\"': '"',
+                "\\'": "'",
+            }
+
+            return escapes.get(x, x)
 
         return re.sub(
             r"\\u\{[0-9a-fA-F]+\}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}|\\[0-9]{1,3}|\\.",
@@ -193,14 +204,48 @@ def decode_strings(lua):
     )
 
 
+def decode_length(lua):
+    def repl(m):
+        content = m.group(2)
+
+        try:
+            return str(len(content))
+
+        except:
+            return m.group(0)
+
+    return re.sub(
+        r'#(["\'])(.*?)(?<!\\)\1',
+        repl,
+        lua,
+        flags=re.S
+    )
+
+
 def Parse(lua):
     last = None
 
     while last != lua:
         last = lua
 
-        lua = decode_math(lua)
         lua = decode_char(lua)
         lua = decode_strings(lua)
+        lua = decode_length(lua)
+        lua = decode_math(lua)
 
     return lua
+
+
+if __name__ == "__main__":
+    tests = [
+        '#"hello"',
+        '#"\\x68\\x69"',
+        '#string.char(65,66,67)',
+        'string.char(72,101,108,108,111)',
+        '"\\x68\\x69"',
+        '2+3*4',
+        '10^2'
+    ]
+
+    for t in tests:
+        print(t, "=>", Parse(t))
