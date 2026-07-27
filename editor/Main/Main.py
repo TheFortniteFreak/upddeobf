@@ -1,21 +1,37 @@
 import Usage
 import sys
 import os
+import re
+
+def RemoveComments(script):
+    script = re.sub(r'--\[\[.*?\]\]', '', script, flags=re.DOTALL)
+    script = re.sub(r'--(?!\[).*$', '', script, flags=re.MULTILINE)
+
+    return script
+
 
 def Main(script, *args):
     internet = True
+
+    script = RemoveComments(script)
+
     if "--nointernet" in args:
         internet = False
+
     if "--fixv" in args:
         script = Usage.FixV(script)
+
     if "--parse" in args:
         script = Usage.Parse(script)
+
     if "--pretty" in args:
-        script = Usage.Pretty(script,internet)
+        script = Usage.Pretty(script, internet)
+
     if "--rdead" in args:
         script = Usage.RDead(script)
 
     return script
+
 
 def main():
     if len(sys.argv) < 2:
