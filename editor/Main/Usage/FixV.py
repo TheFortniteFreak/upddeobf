@@ -7,6 +7,8 @@ def FixV(code):
     variables = {}
     functions = {}
 
+    reserved = set()
+
     protected = []
 
     def protect(match):
@@ -25,6 +27,10 @@ def FixV(code):
     def new_var(old):
         nonlocal var_counter
 
+        # Don't rename functions as variables
+        if old in reserved:
+            return old
+
         if old not in variables:
             variables[old] = f"v{var_counter}"
             var_counter += 1
@@ -37,6 +43,9 @@ def FixV(code):
 
         prefix = match.group(1) or ""
         old = match.group(2)
+
+        # Reserve function names
+        reserved.add(old)
 
         if old not in functions:
             functions[old] = f"f{func_counter}"
@@ -72,7 +81,6 @@ def FixV(code):
             else:
                 result.append(p)
 
-
         return f"{func}({','.join(result)})"
 
 
@@ -98,7 +106,6 @@ def FixV(code):
             else:
                 names.append(v)
 
-
         return "for " + ",".join(names) + " in"
 
 
@@ -122,7 +129,12 @@ def FixV(code):
 
     def replace_assignment(match):
 
-        return new_var(match.group(1)) + match.group(2)
+        name = match.group(1)
+
+        if name in reserved:
+            return match.group(0)
+
+        return new_var(name) + match.group(2)
 
 
     code = re.sub(
@@ -131,6 +143,8 @@ def FixV(code):
         code
     )
 
+
+    # Replace function references
     for old, new in functions.items():
 
         code = re.sub(
@@ -139,13 +153,19 @@ def FixV(code):
             code
         )
 
+
+    # Replace variables
     for old, new in variables.items():
+
+        if old in reserved:
+            continue
 
         code = re.sub(
             rf"(?<![A-Za-z0-9_]){re.escape(old)}(?![A-Za-z0-9_])",
             new,
             code
         )
+
 
     code = re.sub(
         r"\x00PROTECTED(\d+)\x00",
